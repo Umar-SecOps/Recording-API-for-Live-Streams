@@ -954,7 +954,15 @@ This ensures all new files are uploaded regularly.
 
 ## ✅ **Example Run**
 
-`$ bash /home/recorder/uploader.sh [2025-10-17 15:00:00] Starting upload cycle... [2025-10-17 15:00:01] Uploading video: race1_camera1.mp4 ... [2025-10-17 15:00:20] ✅ Uploaded video: race1_camera1.mp4 [2025-10-17 15:00:21] Uploading image: race1_snapshot.jpg ... [2025-10-17 15:00:22] ✅ Uploaded image: race1_snapshot.jpg [2025-10-17 15:00:23] Upload cycle finished.`
+```bash
+$ bash /home/recorder/uploader.sh
+[2025-10-17 15:00:00] Starting upload cycle...
+[2025-10-17 15:00:01] Uploading video: race1_camera1.mp4 ...
+[2025-10-17 15:00:20] ✅ Uploaded video: race1_camera1.mp4
+[2025-10-17 15:00:21] Uploading image: race1_snapshot.jpg ...
+[2025-10-17 15:00:22] ✅ Uploaded image: race1_snapshot.jpg
+[2025-10-17 15:00:23] Upload cycle finished.
+```
 
 ---
 
