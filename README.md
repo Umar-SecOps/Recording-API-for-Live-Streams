@@ -703,3 +703,268 @@ This API is used in the Marble Racing Backend Code. When the New Round API is hi
 To Stop the recording this record API is hit when the Set Result API is hit. This way when the round is ended the recording stops and we gets the whole video of the round. The 10 second delay is added at stop to get the ranking section in the live stream. If we don't add the delay here it will stop exactly when the API for set Result is hit. 
 
 To take a Snapshot we have added this API at the set rank API of marble racing. This way when the marbles reach the finish line the snapshot of the finish point is taken. We have not set it in Set result because if we set this API in set Result a Logo will interrupt the screenshot. To get a clean screenshot we are using it at set Rank.
+
+
+# Uploading Recording to Google Cloud Storage
+
+Automatically upload finished video and image files from a local recording directory to a Google Cloud Storage (GCS) bucket using rclone.
+
+## 🧠 **Overview**
+
+This script is designed for use in automated recording environment. It detects completed files, ensures they are not still being written, and safely uploads them to a GCS bucket.
+
+It prevents duplicate uploads by using a **lock mechanism**, logs every activity, and uploads both videos and snapshots.
+
+---
+## Script:
+
+```bash
+#!/bin/bash
+# uploader.sh - Upload finished recordings (videos + images) to GCS bucket
+
+BASE_DIR="/home/recorder"
+DATA_DIR="$BASE_DIR/Data"
+LOG_FILE="$BASE_DIR/upload.log"
+LOCK_FILE="/tmp/uploader.lock"
+RCLONE_REMOTE="gcs:marblef1-media"
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
+}
+
+# --- Lock handling with stale lock cleanup ---
+if [ -f "$LOCK_FILE" ]; then
+    PID=$(cat "$LOCK_FILE" 2>/dev/null)
+    if [ -n "$PID" ] && ps -p "$PID" > /dev/null 2>&1; then
+        log "Another uploader instance is already running (PID $PID). Exiting."
+        exit 1
+    else
+        log "Stale lock detected (PID $PID not active). Removing lock."
+        rm -f "$LOCK_FILE"
+    fi
+fi
+
+# Create/update lock with current PID
+echo $$ > "$LOCK_FILE"
+
+log "Starting upload cycle..."
+
+# --- Upload all videos ---
+find "$DATA_DIR" -type f -name "*.mp4" | while read -r FILE; do
+    FILENAME=$(basename "$FILE")
+
+    # Skip if file is still being written
+    if lsof "$FILE" >/dev/null 2>&1; then
+        log "Skipping video $FILENAME (still in use)"
+        continue
+    fi
+
+    log "Uploading video: $FILENAME ..."
+    if rclone move "$FILE" "$RCLONE_REMOTE/Data/videos/" \
+        --transfers=4 --checkers=8 \
+        --gcs-bucket-policy-only \
+        --log-level INFO \
+        --log-file="$LOG_FILE"; then
+        log "✅ Uploaded video: $FILENAME"
+    else
+        log "❌ Failed to upload video: $FILENAME"
+    fi
+done
+
+# --- Upload all images ---
+find "$DATA_DIR" -type f \( -name "*.jpg" -o -name "*.png" \) | while read -r FILE; do
+    FILENAME=$(basename "$FILE")
+
+    # Skip if file is still being written
+    if lsof "$FILE" >/dev/null 2>&1; then
+        log "Skipping image $FILENAME (still in use)"
+        continue
+    fi
+
+    log "Uploading image: $FILENAME ..."
+    if rclone move "$FILE" "$RCLONE_REMOTE/Data/images/" \
+        --transfers=4 --checkers=8 \
+        --gcs-bucket-policy-only \
+        --log-level INFO \
+        --log-file="$LOG_FILE"; then
+        log "✅ Uploaded image: $FILENAME"
+    else
+        log "❌ Failed to upload image: $FILENAME"
+    fi
+done
+
+log "Upload cycle finished."
+
+# Remove lock after completion
+rm -f "$LOCK_FILE"
+```
+
+______
+## 📁 **Directory Structure**
+
+```bash
+/home/recorder/
+├── Data/
+│   ├── videos/        # Local directory for video recordings (*.mp4)
+│   └── images/        # Local directory for snapshots (*.jpg / *.png)
+├── upload.log         # Log file for all uploader activity
+├── uploader.sh        # The uploader script
+
+```
+---
+
+## ⚙️ **Configuration**
+
+At the top of the script, you can adjust the following constants:
+
+| Variable        | Default Value          | Description                                     |
+| --------------- | ---------------------- | ----------------------------------------------- |
+| `BASE_DIR`      | `/home/recorder`       | Base directory for all data                     |
+| `DATA_DIR`      | `$BASE_DIR/Data`       | Directory containing media files                |
+| `LOG_FILE`      | `$BASE_DIR/upload.log` | Log file to store activity                      |
+| `LOCK_FILE`     | `/tmp/uploader.lock`   | Prevents multiple script instances from running |
+| `RCLONE_REMOTE` | `gcs:marblef1-media`   | `rclone` remote name + GCS bucket path          |
+
+---
+
+## 🧩 **Dependencies**
+
+The following must be installed and configured:
+
+- **rclone** (configured with your GCS remote)  
+    Setup using:
+    
+    `rclone config`
+    
+    Example remote name: `gcs`
+    
+- **lsof** (to check if files are still being written)
+    
+- Bash shell environment (Linux)
+    
+
+---
+
+## 🚀 **How It Works**
+
+### 1. **Lock Mechanism**
+
+Before running, the script checks if another uploader instance is already active.  
+It uses a lock file (`/tmp/uploader.lock`) that stores the PID of the running process.
+
+- If another instance is detected → script exits.
+    
+- If the previous process died unexpectedly → the lock is cleared and the new process starts.
+    
+
+This prevents **duplicate uploads** and **data corruption**.
+
+---
+
+### 2. **Upload Process**
+
+The script performs two main upload loops:
+
+#### **(a) Upload Videos**
+
+- Finds all `.mp4` files in `$DATA_DIR`
+    
+- Skips any file that is still in use (`lsof`)
+    
+- Uploads each file using `rclone move` to:
+    
+    `gcs:marblef1-media/Data/videos/`
+    
+- Deletes local file upon successful upload.
+    
+
+#### **(b) Upload Images**
+
+- Finds all `.jpg` and `.png` files in `$DATA_DIR`
+    
+- Performs same safety check and upload logic
+    
+- Uploads to:
+    
+    `gcs:marblef1-media/Data/images/`
+    
+
+---
+
+### 3. **Logging**
+
+All events (start, upload success/failure, skipped files, and lock handling) are logged to:
+
+`/home/recorder/upload.log`
+
+Each log entry includes a timestamp for easy debugging.
+
+**Example log output:**
+
+`[2025-10-17 14:20:15] Starting upload cycle... [2025-10-17 14:20:16] Uploading video: race1_camera1.mp4 ... [2025-10-17 14:21:05] ✅ Uploaded video: race1_camera1.mp4 [2025-10-17 14:21:06] Uploading image: race1_snapshot.jpg ... [2025-10-17 14:21:08] ✅ Uploaded image: race1_snapshot.jpg [2025-10-17 14:21:10] Upload cycle finished.`
+
+---
+
+## 🧰 **rclone Options Used**
+
+|Option|Description|
+|---|---|
+|`move`|Moves files (upload + delete local copy)|
+|`--transfers=4`|Parallel uploads for better speed|
+|`--checkers=8`|Number of file check threads|
+|`--gcs-bucket-policy-only`|Ensures uploads respect GCS IAM policies|
+|`--log-file`|Appends output to the main log file|
+
+---
+
+## ⏰ **Recommended Usage**
+
+You can automate this script using **cron** for periodic uploads.
+
+**Example: Run every 10 minutes**
+
+`*/10 * * * * /home/recorder/uploader.sh`
+
+This ensures all new files are uploaded regularly.
+
+---
+
+## 🧼 **Cleanup**
+
+- Old lock files are automatically removed if stale.
+    
+- Successfully uploaded files are deleted from local storage.
+    
+- Failed uploads are retried in the next cycle.
+    
+
+---
+
+## ❗ **Error Handling**
+
+|Condition|Behavior|
+|---|---|
+|Another instance running|Exits with log message|
+|File in use|Skipped and retried later|
+|Upload failure|Logged as ❌ and retried next cycle|
+|rclone misconfigured|Uploads fail, shown in log|
+|Lock file stale|Auto-removed and process restarted|
+
+---
+
+## ✅ **Example Run**
+
+`$ bash /home/recorder/uploader.sh [2025-10-17 15:00:00] Starting upload cycle... [2025-10-17 15:00:01] Uploading video: race1_camera1.mp4 ... [2025-10-17 15:00:20] ✅ Uploaded video: race1_camera1.mp4 [2025-10-17 15:00:21] Uploading image: race1_snapshot.jpg ... [2025-10-17 15:00:22] ✅ Uploaded image: race1_snapshot.jpg [2025-10-17 15:00:23] Upload cycle finished.`
+
+---
+
+## 🧾 **Summary**
+
+|Feature|Description|
+|---|---|
+|Upload Target|Google Cloud Storage|
+|Upload Tool|rclone|
+|Supported Files|`.mp4`, `.jpg`, `.png`|
+|Safety Checks|File-in-use, Lock mechanism|
+|Logging|Timestamped, persistent log|
+|Automation|Supports cron jobs|
