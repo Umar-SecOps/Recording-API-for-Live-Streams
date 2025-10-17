@@ -901,7 +901,15 @@ Each log entry includes a timestamp for easy debugging.
 
 **Example log output:**
 
-`[2025-10-17 14:20:15] Starting upload cycle... [2025-10-17 14:20:16] Uploading video: race1_camera1.mp4 ... [2025-10-17 14:21:05] ✅ Uploaded video: race1_camera1.mp4 [2025-10-17 14:21:06] Uploading image: race1_snapshot.jpg ... [2025-10-17 14:21:08] ✅ Uploaded image: race1_snapshot.jpg [2025-10-17 14:21:10] Upload cycle finished.`
+```bash
+[2025-10-17 14:20:15] Starting upload cycle...
+[2025-10-17 14:20:16] Uploading video: race1_camera1.mp4 ...
+[2025-10-17 14:21:05] ✅ Uploaded video: race1_camera1.mp4
+[2025-10-17 14:21:06] Uploading image: race1_snapshot.jpg ...
+[2025-10-17 14:21:08] ✅ Uploaded image: race1_snapshot.jpg
+[2025-10-17 14:21:10] Upload cycle finished.
+
+```
 
 ---
 
